@@ -1,0 +1,429 @@
+
+def load_from_webhook(state: Dict[str, Any]) -> Dict[str, Any]:
+    rt = state.get("raw_ticket", {})
+    sn = state.get("service_now", {})
+    env = state.get("environment", {})
+
+    update: Dict[str, Any] = {}
+
+    # Normalize core fields from webhook to state
+    update["service_now"] = {
+        **sn,
+        "incident_id": rt.get("incident_id") or sn.get("incident_id", ""),
+        "short_description": rt.get("short_description", sn.get("short_description", "")),
+        "description": rt.get("description", sn.get("description", "")),
+        "priority": rt.get("priority", sn.get("priority", "P3")),
+        "state": rt.get("state", sn.get("state", "New")),
+        "assignment_group": rt.get("assignment_group", sn.get("assignment_group", "")),
+        "category": rt.get("category", sn.get("category", "")),
+        "subcategory": rt.get("subcategory", sn.get("subcategory", "")),
+        "cmdb_ci": rt.get("cmdb_ci", sn.get("cmdb_ci", "")),
+        "opened_by": sn.get("opened_by", ""),
+        "caller": sn.get("caller", ""),
+    }
+
+    update["environment"] = {
+        **env,
+        "hostname": env.get("hostname") or rt.get("hostname", ""),
+        "os_type": env.get("os_type") or rt.get("os_type", "Linux"),
+        "oracle_sid": env.get("oracle_sid") or rt.get("oracle_sid"),
+        "sql_instance": env.get("sql_instance") or rt.get("sql_instance"),
+        "ip_address": env.get("ip_address") or rt.get("ip_address", ""),
+    }
+
+    inputs = state.get("inputs", {})
+    update["inputs"] = {
+        **inputs,
+        "alert_message": rt.get("failure_message", inputs.get("alert_message", "")),
+        "rubrik_payload": rt.get("backup_job_metadata", inputs.get("rubrik_payload", {})),
+        "diagnostic_data": inputs.get("diagnostic_data", {"pre_checks": {}, "post_checks": {}})
+    }
+
+    # Audit + note
+    inc = update["service_now"]["incident_id"]
+    partial = {}
+    partial.update(add_audit_event(state, "load_from_webhook", {"incident_id": inc}))
+    partial.update(append_work_note(state, f"Webhook normalized. Incident={inc}"))
+    update.update(partial)
+    return update
+
+----------------------------------------------------------------------------------------------------------
+
+def classify_and_select_sop(state: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Uses LLM to infer db_type & error_category + sop_id. Falls back to simple heuristics.
+    Expects a global `llm` like your example.
+    """
+    alert = state.get("inputs", {}).get("alert_message", "")
+    env = state.get("environment", {})
+    sn = state.get("service_now", {})
+
+    db_type, error_category, sop_id = None, None, None
+
+    try:
+        prompt = [
+            SystemMessage(content="You are a senior DB SRE. Extract DB classification and SOP."),
+            HumanMessage(content=f"""
+Given this incident:
+- Environment: {json.dumps(env)}
+- ServiceNow: {json.dumps({k:v for k,v in sn.items() if k in ['incident_id','category','subcategory','priority']})}
+- Alert: {alert}
+
+Return STRICT JSON with keys: db_type (Oracle|SQL_Server|Unknown), 
+error_category (Disk_Space|Log_Mode|Authentication|ORA_08181|SQL_Conn_Failure|Replication_Issue|Unknown),
+sop_id (string, best-fit).
+""")
+        ]
+        msg = llm.invoke(prompt)  # <-- your style
+        data = json.loads(msg.content.strip())
+        db_type = data.get("db_type")
+        error_category = data.get("error_category")
+        sop_id = data.get("sop_id")
+    except Exception:
+        # Fallback heuristics
+        s = (alert + " " + json.dumps(state.get("raw_ticket", {}))).lower()
+        if env.get("oracle_sid") or "ora-" in s or "oracle" in s:
+            db_type = db_type or "Oracle"
+        elif env.get("sql_instance") or "sql server" in s or "mssql" in s:
+            db_type = db_type or "SQL_Server"
+        else:
+            db_type = db_type or "Unknown"
+
+        if "ora-08181" in s:
+            error_category = "ORA_08181"
+        elif "disk" in s or "space" in s:
+            error_category = "Disk_Space"
+        elif "archivelog" in s or "archive log" in s:
+            error_category = "Log_Mode"
+        elif "connect" in s or "timeout" in s:
+            error_category = "SQL_Conn_Failure"
+        elif "replication" in s or "replicat" in s:
+            error_category = "Replication_Issue"
+        elif "auth" in s or "login failed" in s:
+            error_category = "Authentication"
+        else:
+            error_category = "Unknown"
+
+        mapping = {
+            ("Oracle", "Disk_Space"): "SOP-ORACLE-DSK-001",
+            ("Oracle", "Log_Mode"): "SOP-ORACLE-ARC-002",
+            ("Oracle", "ORA_08181"): "SOP-ORACLE-ORA08181-003",
+            ("SQL_Server", "Disk_Space"): "SOP-MSSQL-DSK-101",
+            ("SQL_Server", "SQL_Conn_Failure"): "SOP-MSSQL-CONN-102",
+            ("SQL_Server", "Authentication"): "SOP-MSSQL-AUTH-103",
+        }
+        sop_id = mapping.get((db_type, error_category), "SOP-GENERIC-000")
+
+    update = {
+        "db_type": db_type,
+        "error_category": error_category,
+        "execution_plan": {
+            **state.get("execution_plan", {}),
+            "sop_id": sop_id
+        }
+    }
+    partial = {}
+    partial.update(add_audit_event(state, "classified", {"db_type": db_type, "error_category": error_category, "sop_id": sop_id}))
+    partial.update(append_work_note(state, f"Classified DB={db_type}, error={error_category}, SOP={sop_id}"))
+    update.update(partial)
+    return update
+
+----------------------------------------------------------------------------------------------------------
+
+def obtain_credentials(state: Dict[str, Any]) -> Dict[str, Any]:
+    # Stub — integrate with Apigee token exchange here
+    inc = state.get("service_now", {}).get("incident_id", "")
+    update = {}
+    update.update(add_audit_event(state, "token_obtained", {"incident_id": inc}))
+    update.update(append_work_note(state, "Temporary credential obtained via Apigee"))
+    return update
+
+----------------------------------------------------------------------------------------------------------
+
+def run_pre_diagnostics(state: Dict[str, Any]) -> Dict[str, Any]:
+    env = state.get("environment", {})
+    db_type = state.get("db_type", "Unknown")
+    os_type = env.get("os_type", "Linux")
+
+    # Replace with real SSH/WinRM calls
+    diag = {"db_status": "DOWN", "service_status": "STOPPED", "disk_space_pct_free": 8, "os_type": os_type, "db_type": db_type}
+
+    dd = state.get("inputs", {}).get("diagnostic_data", {"pre_checks": {}, "post_checks": {}})
+    dd["pre_checks"] = diag
+
+    update = {
+        "inputs": {
+            **state.get("inputs", {}),
+            "diagnostic_data": dd
+        }
+    }
+    update.update(add_audit_event(state, "pre_diagnostics_complete", {"summary": diag}))
+    update.update(append_work_note(state, f"Pre-checks: {diag}"))
+    return update
+
+----------------------------------------------------------------------------------------------------------
+
+def generate_execution_plan(state: Dict[str, Any]) -> Dict[str, Any]:
+    db_type = state.get("db_type", "Unknown")
+    error_cat = state.get("error_category", "Unknown")
+    sop_id = state.get("execution_plan", {}).get("sop_id", "SOP-GENERIC-000")
+
+    steps: List[Dict[str, Any]] = []
+
+    try:
+        prompt = [
+            SystemMessage(content="You are creating a safe, minimal remediation plan for DB backup failures."),
+            HumanMessage(content=f"""
+DB Type: {db_type}
+Error Category: {error_cat}
+SOP Id: {sop_id}
+
+Return STRICT JSON with:
+- steps: list of objects {{ "name": str, "cmd": str, "safety": str, "validate": str }}
+- auto_fix_supported: boolean
+
+Constraints:
+- Prefer cleanup of logs/archive/temp first if Disk_Space or Archive issues.
+- Include at least one validation check step.
+- No destructive commands (rm -rf, format, etc.).
+""")
+        ]
+        msg = llm.invoke(prompt)  # like your example
+        data = json.loads(msg.content.strip())
+        steps = data.get("steps", [])
+        auto_fix_supported = bool(data.get("auto_fix_supported", bool(steps)))
+    except Exception:
+        # Deterministic fallback
+        if db_type == "Oracle" and error_cat in ("Disk_Space", "Log_Mode", "ORA_08181"):
+            steps = [
+                {"name": "cleanup_archivelogs", "cmd": "find /u01/app/oracle/diag -type f -mtime +7 -delete", "safety": "only older than retention", "validate": "df -h and archived logs count"},
+                {"name": "check_db_open", "cmd": "sqlplus -s / as sysdba <<EOF\nselect status from v$instance;\nEOF", "safety": "read-only check", "validate": "status in OPEN/READ WRITE"},
+            ]
+        elif db_type == "SQL_Server" and error_cat in ("Disk_Space", "SQL_Conn_Failure", "Authentication"):
+            steps = [
+                {"name": "cleanup_errorlogs", "cmd": "PowerShell Remove-Item 'C:\\MSSQL\\Log\\*.trc' -ErrorAction SilentlyContinue", "safety": "remove only *.trc", "validate": "disk free percent"},
+                {"name": "restart_service", "cmd": "PowerShell Restart-Service MSSQLSERVER", "safety": "off-peak only", "validate": "service running"},
+            ]
+        else:
+            steps = [{"name": "noop", "cmd": "echo 'No-op; manual review'", "safety": "none", "validate": "none"}]
+        auto_fix_supported = steps[0]["name"] != "noop"
+
+    update = {
+        "execution_plan": {
+            **state.get("execution_plan", {}),
+            "sop_id": sop_id,
+            "steps": steps,
+            "auto_fix_supported": auto_fix_supported
+        }
+    }
+    update.update(add_audit_event(state, "execution_plan_generated", {"sop_id": sop_id, "steps": [s["name"] for s in steps]}))
+    update.update(append_work_note(state, f"Plan generated ({sop_id}): {[s['name'] for s in steps]}"))
+    return update
+
+----------------------------------------------------------------------------------------------------------
+
+def execute_remediation(state: Dict[str, Any]) -> Dict[str, Any]:
+    env = state.get("environment", {})
+    os_type = env.get("os_type", "Linux")
+    db_type = state.get("db_type", "Unknown")
+    steps = state.get("execution_plan", {}).get("steps", [])
+
+    # Replace with real executor (SSH/WinRM) and collect stdout/stderr/rc
+    results = [{"step": s.get("name"), "ok": True, "stdout": "ok", "stderr": "", "cmd": s.get("cmd")} for s in steps]
+
+    update = {
+        "remediation": {
+            **state.get("remediation", {}),
+            "actions_performed": results
+        }
+    }
+    update.update(add_audit_event(state, "remediation_executed", {"results": results, "os": os_type, "db": db_type}))
+    update.update(append_work_note(state, f"Remediation executed: {[r['step'] for r in results]}"))
+    return update
+
+----------------------------------------------------------------------------------------------------------
+
+def validate_post_remediation(state: Dict[str, Any]) -> Dict[str, Any]:
+    env = state.get("environment", {})
+    db_type = state.get("db_type", "Unknown")
+    os_type = env.get("os_type", "Linux")
+
+    # Replace with real checks
+    post = {"db_status": "UP", "service_status": "RUNNING", "disk_space_pct_free": 28}
+    pre = state.get("inputs", {}).get("diagnostic_data", {}).get("pre_checks", {})
+
+    success = (post.get("db_status") in ("OPEN", "UP", "ONLINE", "RUNNING")) or (post.get("service_status") in ("RUNNING", "STARTED"))
+    disk_ok = post.get("disk_space_pct_free", 0) >= 20
+    overall = "Success" if success and disk_ok else ("Partially_Remediated" if success or disk_ok else "Failed")
+
+    dd = state.get("inputs", {}).get("diagnostic_data", {"pre_checks": {}, "post_checks": {}})
+    dd["post_checks"] = post
+
+    update = {
+        "inputs": {
+            **state.get("inputs", {}),
+            "diagnostic_data": dd
+        },
+        "remediation": {
+            **state.get("remediation", {}),
+            "status": overall
+        }
+    }
+    update.update(add_audit_event(state, "post_validation_complete", {"pre": pre, "post": post, "status": overall}))
+    update.update(append_work_note(state, f"Post-validation: {overall}"))
+    return update
+``
+
+----------------------------------------------------------------------------------------------------------
+
+def post_updates_to_servicenow(state: Dict[str, Any]) -> Dict[str, Any]:
+    sn = state.get("service_now", {})
+    incident_id = sn.get("incident_id", "")
+    updates = state.get("service_now_updates", {})
+    work_notes = updates.get("work_notes", [])
+    comments = updates.get("comments", [])
+    attachments = updates.get("attachments", [])
+
+    # TODO: push work_notes/comments/attachments to SN via Apigee/SN API
+    update = {}
+    update.update(add_audit_event(state, "servicenow_updated", {
+        "incident_id": incident_id,
+        "work_notes": len(work_notes),
+        "comments": len(comments),
+        "attachments": len(attachments),
+    }))
+    return update
+
+----------------------------------------------------------------------------------------------------------
+
+def notify_backup_team(state: Dict[str, Any]) -> Dict[str, Any]:
+    incident_id = state.get("service_now", {}).get("incident_id", "")
+    message_id = "msg-12345"  # TODO: ServiceNow notification call
+
+    update = {
+        "notification": {
+            **state.get("notification", {}),
+            "backup_team_notified": True,
+            "message_id": message_id,
+        }
+    }
+    update.update(add_audit_event(state, "backup_team_notified", {"incident_id": incident_id, "message_id": message_id}))
+    update.update(append_work_note(state, f"Backup Team notified (MessageId={message_id}). Please re-run backup."))
+    return update
+``
+
+----------------------------------------------------------------------------------------------------------
+
+def await_backup_team_update(state: Dict[str, Any]) -> Dict[str, Any]:
+    status = state.get("inputs", {}).get("backup_rerun_status")
+    if not status:
+        # Try to infer from comments
+        comments = (state.get("service_now_updates", {}).get("comments") or [])
+        joined = " ".join(comments).lower()
+        if "backup success" in joined or "backup successful" in joined:
+            status = "success"
+        elif "backup failed" in joined or "failure" in joined:
+            status = "failure"
+
+    if not status:
+        # No decision yet; stay waiting
+        return add_audit_event(state, "awaiting_backup_team_result")
+
+    update = {
+        "inputs": {
+            **state.get("inputs", {}),
+            "backup_rerun_status": status
+        }
+    }
+    update.update(add_audit_event(state, "backup_team_result_received", {"status": status}))
+    update.update(append_work_note(state, f"Backup team reported: {status}"))
+    return update
+
+----------------------------------------------------------------------------------------------------------
+
+def escalate_to_dba(state: Dict[str, Any]) -> Dict[str, Any]:
+    inc = state.get("service_now", {}).get("incident_id", "")
+    # TODO: SN reassign to DBA group, attach diagnostics bundle
+    update = {}
+    update.update(add_audit_event(state, "escalated_to_dba", {"incident_id": inc, "group": "Oracle/SQL DBA Team"}))
+    update.update(append_work_note(state, "Escalated to DBA team with diagnostic bundle."))
+    return update
+``
+
+----------------------------------------------------------------------------------------------------------
+
+def route_after_validation(state: Dict[str, Any]) -> str:
+    # Always send updates first
+    return "post_updates_to_servicenow"
+
+def route_after_notify(state: Dict[str, Any]) -> str:
+    return "await_backup_team_update"
+
+def route_after_await(state: Dict[str, Any]) -> str:
+    result = state.get("inputs", {}).get("backup_rerun_status")
+    if result == "success":
+        return "END"
+    if result == "failure":
+        return "escalate_to_dba"
+    return "await_backup_team_update"
+
+----------------------------------------------------------------------------------------------------------
+
+
+from langgraph.graph import StateGraph, START, END
+
+graph = StateGraph(dict)  # or StateGraph(IncidentState) if you have the TypedDict
+
+# Add nodes (exactly like your example)
+graph.add_node("load_from_webhook", load_from_webhook)
+graph.add_node("classify_and_select_sop", classify_and_select_sop)
+graph.add_node("obtain_credentials", obtain_credentials)
+graph.add_node("run_pre_diagnostics", run_pre_diagnostics)
+graph.add_node("generate_execution_plan", generate_execution_plan)
+graph.add_node("execute_remediation", execute_remediation)
+graph.add_node("validate_post_remediation", validate_post_remediation)
+graph.add_node("post_updates_to_servicenow", post_updates_to_servicenow)
+graph.add_node("notify_backup_team", notify_backup_team)
+graph.add_node("await_backup_team_update", await_backup_team_update)
+graph.add_node("escalate_to_dba", escalate_to_dba)
+
+# Edges
+graph.add_edge(START, "load_from_webhook")
+graph.add_edge("load_from_webhook", "classify_and_select_sop")
+graph.add_edge("classify_and_select_sop", "generate_execution_plan")
+graph.add_edge("generate_execution_plan", "obtain_credentials")
+graph.add_edge("obtain_credentials", "run_pre_diagnostics")
+graph.add_edge("run_pre_diagnostics", "execute_remediation")
+graph.add_edge("execute_remediation", "validate_post_remediation")
+
+graph.add_conditional_edges(
+    "validate_post_remediation",
+    route_after_validation,
+    {
+        "post_updates_to_servicenow": "post_updates_to_servicenow",
+    },
+)
+
+graph.add_edge("post_updates_to_servicenow", "notify_backup_team")
+
+graph.add_conditional_edges(
+    "notify_backup_team",
+    route_after_notify,
+    {
+        "await_backup_team_update": "await_backup_team_update",
+    },
+)
+
+graph.add_conditional_edges(
+    "await_backup_team_update",
+    route_after_await,
+    {
+        "END": END,
+        "escalate_to_dba": "escalate_to_dba",
+        "await_backup_team_update": "await_backup_team_update",
+    },
+)
+
+graph.add_edge("escalate_to_dba", END)
+
+app = graph.compile()
