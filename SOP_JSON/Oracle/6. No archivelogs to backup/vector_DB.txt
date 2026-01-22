@@ -1,0 +1,23 @@
+
+{
+  "sop_id": "oracle_no_archivelogs_to_backup",
+  "db_type": "Oracle",
+  "error_category": "Backup_Failure",
+  "problem_statement": "Rubrik backup failed because there are no archivelogs available for backup",
+  "symptoms": [
+    "Rubrik snappable backup failure logged",
+    "Service request mentions 'No archivelogs to backup'",
+    "Database is in ARCHIVELOG mode but FRA diskgroup has no archive logs"
+  ],
+  "resolution_summary": "Execute the SOPs provided by the DBA. Update the SNOW ticket with the resolution step and notify backup team to rerun the backup."
+  "auto_fix_supported": false,
+  "requires_human_approval": false,
+  "risk_level": "Low",
+  "tags": [
+    "oracle",
+    "backup_failure",
+    "archivelog",
+    "rubrik",
+    "asm"
+  ]
+}

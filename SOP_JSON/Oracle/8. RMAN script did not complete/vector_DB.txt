@@ -1,0 +1,23 @@
+
+{
+  "sop_id": "oracle_rman_script_did_not_complete",
+  "db_type": "Oracle",
+  "error_category": "Backup_Failure",
+  "problem_statement": "Rubrik backup failed because the RMAN script did not complete successfully",
+  "symptoms": [
+    "Rubrik snappable backup failure logged",
+    "Service request mentions 'RMAN script did not complete'",
+    "RMAN log directory permissions incorrect"
+  ],
+  "resolution_summary": "Execute the SOPs provided by the DBA. Update the SNOW ticket with the resolution step and notify backup team to rerun the backup."
+  "auto_fix_supported": false,
+  "requires_human_approval": false,
+  "risk_level": "Medium",
+  "tags": [
+    "oracle",
+    "backup_failure",
+    "rman",
+    "rubrik",
+    "permissions"
+  ]
+}

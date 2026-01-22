@@ -1,0 +1,120 @@
+
+{
+  "sop_id": "oracle_db_noarchivelog_mode",
+  "sop_name": "Oracle Database in NOARCHIVELOG Mode",
+  "db_type": "Oracle",
+  "error_category": "Log_Mode",
+
+  "prerequisites": {
+    "min_permissions": [
+      "oracle_sysdba",
+      "pbrun_access",
+      "ServiceNow_incident_update"
+    ],
+    "required_tools": [
+      "ssh",
+      "sqlplus"
+    ],
+    "pre_checks": [
+      {
+        "id": "check_log_mode",
+        "description": "Verify current database archive log mode",
+        "command": "sqlplus / as sysdba <<EOF\nSELECT log_mode FROM v$database;\nEOF",
+        "expected_result": "NOARCHIVELOG",
+        "failure_action": "Abort"
+      }
+    ]
+  },
+
+  "steps": [
+    {
+      "step_id": "connect_server",
+      "title": "Connect to Database Server",
+      "description": "Connect to the Oracle database server from jump host and set database environment using racenv.",
+      "action_type": "command",
+      "command": "pbrun -u oracle -h <hostname> SHELL && . racenv",
+      "expected_output": "Oracle environment variables set for the selected database",
+      "rollback": {
+        "supported": false
+      }
+    },
+    {
+      "step_id": "shutdown_database",
+      "title": "Shutdown Database",
+      "description": "Shutdown the database gracefully before enabling ARCHIVELOG mode.",
+      "action_type": "sql_query",
+      "command": "SHUTDOWN IMMEDIATE;",
+      "expected_output": "ORACLE instance shut down",
+      "rollback": {
+        "supported": false
+      }
+    },
+    {
+      "step_id": "startup_mount",
+      "title": "Startup Database in Mount Mode",
+      "description": "Start the database in MOUNT mode to change log mode settings.",
+      "action_type": "sql_query",
+      "command": "STARTUP MOUNT;",
+      "expected_output": "ORACLE instance started in mount mode",
+      "rollback": {
+        "supported": false
+      }
+    },
+    {
+      "step_id": "enable_archivelog",
+      "title": "Enable ARCHIVELOG Mode",
+      "description": "Enable ARCHIVELOG mode and configure recovery parameters.",
+      "action_type": "sql_query",
+      "command": "ALTER DATABASE ARCHIVELOG;\nALTER SYSTEM SET LOG_ARCHIVE_DEST_1='LOCATION=DB_RECOVERY_FILE_DEST';\nALTER SYSTEM SET DB_RECOVERY_FILE_DEST='<ARCHIVE_DISKGROUP>';\nALTER SYSTEM SET DB_RECOVERY_FILE_DEST_SIZE='<SIZE_ASSIGNED>';",
+      "expected_output": "Database altered successfully",
+      "rollback": {
+        "supported": false
+      }
+    },
+    {
+      "step_id": "open_database",
+      "title": "Open Database",
+      "description": "Open the database after enabling ARCHIVELOG mode.",
+      "action_type": "sql_query",
+      "command": "ALTER DATABASE OPEN;",
+      "expected_output": "Database opened successfully",
+      "rollback": {
+        "supported": false
+      }
+    }
+  ],
+
+  "post_checks": [
+    {
+      "id": "validate_archivelog",
+      "description": "Confirm database is now running in ARCHIVELOG mode",
+      "command": "SELECT log_mode FROM v$database;",
+      "expected_result": "ARCHIVELOG"
+    }
+  ],
+
+  "auto_fix": {
+    "supported": false,
+    "risk_level": "High",
+    "requires_human_approval": true
+  },
+
+  "notifications": {
+    "on_success": "Notify Backup Team to enable SLA and re-run the backup.",
+    "on_failure": "Work with application team to confirm whether database should remain in NOARCHIVELOG mode; if so, request Backup Team to disable SLA.",
+    "notify_team": ["Backup_Team", "DBA_Team"]
+  },
+
+  "metadata": {
+    "version": "1.0",
+    "last_modified": "2026-01-08",
+    "author": "Oracle DBA Team",
+    "tags": [
+      "oracle",
+      "noarchivelog",
+      "archivelog",
+      "backup_failure",
+      "rubrik"
+    ]
+  }
+}

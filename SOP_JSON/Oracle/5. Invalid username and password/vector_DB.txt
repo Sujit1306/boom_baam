@@ -1,0 +1,23 @@
+
+{
+  "sop_id": "oracle_invalid_username_password",
+  "db_type": "Oracle",
+  "error_category": "Authentication",
+  "problem_statement": "Rubrik backup failed due to invalid username or password for database connection",
+  "symptoms": [
+    "Rubrik snappable backup failure logged",
+    "Service request mentions 'Invalid username and password'",
+    "Authentication failure during backup job"
+  ],
+  "resolution_summary": "Execute the SOPs provided by the DBA. Update the SNOW ticket with the resolution step and notify backup team to rerun the backup."
+  "auto_fix_supported": false,
+  "requires_human_approval": false,
+  "risk_level": "Medium",
+  "tags": [
+    "oracle",
+    "authentication",
+    "invalid_credentials",
+    "rubrik",
+    "backup_failure"
+  ]
+}

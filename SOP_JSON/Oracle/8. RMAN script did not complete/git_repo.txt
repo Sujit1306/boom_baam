@@ -1,0 +1,131 @@
+
+{
+  "sop_id": "oracle_rman_script_not_complete",
+  "sop_name": "Oracle RMAN Script Did Not Complete",
+  "db_type": "Oracle",
+  "error_category": "Backup_Failure",
+
+  "prerequisites": {
+    "min_permissions": [
+      "oracle_sysdba",
+      "pbrun_access",
+      "ServiceNow_incident_update"
+    ],
+    "required_tools": [
+      "ssh",
+      "linux_shell"
+    ],
+    "pre_checks": [
+      {
+        "id": "check_error_keyword",
+        "description": "Verify ServiceNow request mentions 'RMAN script did not complete'",
+        "command": "ServiceNow → Review incident description",
+        "expected_result": "Keyword 'RMAN script did not complete' present",
+        "failure_action": "Abort"
+      }
+    ]
+  },
+
+  "steps": [
+    {
+      "step_id": "connect_server",
+      "title": "Connect to Database Server",
+      "description": "Connect to the database server from jump host using pbrun.",
+      "action_type": "command",
+      "command": "pbrun -u oracle -h <hostname> SHELL",
+      "expected_output": "Connected to database server as oracle user",
+      "rollback": {
+        "supported": false
+      }
+    },
+    {
+      "step_id": "navigate_rubrik_logs",
+      "title": "Navigate to Rubrik Log Directory",
+      "description": "Change directory to Rubrik log location to validate RMAN script log permissions.",
+      "action_type": "command",
+      "command": "cd /var/log/rubrik",
+      "expected_output": "Current directory is /var/log/rubrik",
+      "rollback": {
+        "supported": false
+      }
+    },
+    {
+      "step_id": "check_directory_permissions",
+      "title": "Validate script_logs Directory Permissions",
+      "description": "Verify that script_logs directory exists and is owned by oracle:oinstall.",
+      "action_type": "command",
+      "command": "ls -ld script_logs",
+      "expected_output": "Ownership shows oracle:oinstall",
+      "rollback": {
+        "supported": false
+      }
+    },
+    {
+      "step_id": "request_permission_fix",
+      "title": "Request Permission Fix (If Required)",
+      "description": "If script_logs directory ownership is incorrect, raise a service request to Linux Compute team to correct permissions.",
+      "action_type": "decision_node",
+      "command": "ServiceNow → Create request for Linux Compute team",
+      "expected_output": "Linux team engaged to fix permissions",
+      "rollback": {
+        "supported": false
+      }
+    },
+    {
+      "step_id": "retrigger_backup",
+      "title": "Re-trigger Backup",
+      "description": "After permissions are fixed, notify Backup Team to re-trigger the Rubrik backup.",
+      "action_type": "command",
+      "command": "ServiceNow → Update notes → Request backup re-trigger",
+      "expected_output": "Backup re-triggered",
+      "rollback": {
+        "supported": false
+      }
+    },
+    {
+      "step_id": "close_request",
+      "title": "Close Service Request",
+      "description": "Update ServiceNow notes and close the request after backup completes successfully.",
+      "action_type": "command",
+      "command": "ServiceNow → Update resolution → Close request",
+      "expected_output": "Service request closed",
+      "rollback": {
+        "supported": false
+      }
+    }
+  ],
+
+  "post_checks": [
+    {
+      "id": "validate_backup_success",
+      "description": "Verify RMAN backup completed successfully after permission fix",
+      "command": "Rubrik Portal → Backup Timeline",
+      "expected_result": "Backup status = Success"
+    }
+  ],
+
+  "auto_fix": {
+    "supported": false,
+    "risk_level": "Medium",
+    "requires_human_approval": true
+  },
+
+  "notifications": {
+    "on_success": "Confirm successful backup in ServiceNow and close the request.",
+    "on_failure": "Escalate to DBA or Linux Compute team if issue persists.",
+    "notify_team": ["Backup_Team", "DBA_Team", "Infra_Team"]
+  },
+
+  "metadata": {
+    "version": "1.0",
+    "last_modified": "2026-01-08",
+    "author": "Oracle DBA Team",
+    "tags": [
+      "oracle",
+      "rman",
+      "permissions",
+      "rubrik",
+      "backup_failure"
+    ]
+  }
+}

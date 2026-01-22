@@ -1,0 +1,23 @@
+
+{
+  "sop_id": "oracle_no_space_left_on_filesystem",
+  "db_type": "Oracle",
+  "error_category": "Disk_Space",
+  "problem_statement": "Rubrik backup failed because there is no space left on the filesystem used by the database",
+  "symptoms": [
+    "Rubrik snappable backup failure logged",
+    "Service request mentions 'No Space left on filesystem'",
+    "Filesystem utilization shows 100% usage on /oracle or related mount points"
+  ],
+  "resolution_summary": "Execute the SOPs provided by the DBA. Update the SNOW ticket with the resolution step and notify backup team to rerun the backup."
+  "auto_fix_supported": false,
+  "requires_human_approval": false,
+  "risk_level": "High",
+  "tags": [
+    "oracle",
+    "backup_failure",
+    "disk_space",
+    "filesystem_full",
+    "rubrik"
+  ]
+}

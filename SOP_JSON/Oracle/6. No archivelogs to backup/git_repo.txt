@@ -1,0 +1,121 @@
+
+{
+  "sop_id": "oracle_no_archivelogs_to_backup",
+  "sop_name": "Oracle No Archivelogs Available for Backup",
+  "db_type": "Oracle",
+  "error_category": "Backup_Failure",
+
+  "prerequisites": {
+    "min_permissions": [
+      "oracle_sysdba",
+      "pbrun_access",
+      "ServiceNow_incident_update"
+    ],
+    "required_tools": [
+      "ssh",
+      "sqlplus",
+      "asmcmd"
+    ],
+    "pre_checks": [
+      {
+        "id": "check_error_keyword",
+        "description": "Verify ServiceNow request mentions 'No archivelogs to backup'",
+        "command": "ServiceNow → Review incident description",
+        "expected_result": "Keyword 'No archivelogs to backup' present",
+        "failure_action": "Abort"
+      }
+    ]
+  },
+
+  "steps": [
+    {
+      "step_id": "connect_server",
+      "title": "Connect to Database Server",
+      "description": "Connect to the database server from jump host and set the database environment using racenv.",
+      "action_type": "command",
+      "command": "pbrun -u oracle -h <hostname> SHELL && . racenv",
+      "expected_output": "Oracle environment variables set",
+      "rollback": {
+        "supported": false
+      }
+    },
+    {
+      "step_id": "check_archivelog_mode",
+      "title": "Validate Archive Log Mode",
+      "description": "Verify that the database is running in ARCHIVELOG mode.",
+      "action_type": "sql_query",
+      "command": "SELECT log_mode FROM v$database;",
+      "expected_output": "LOG_MODE returned as ARCHIVELOG",
+      "rollback": {
+        "supported": false
+      }
+    },
+    {
+      "step_id": "switch_to_asm",
+      "title": "Switch Environment to ASM",
+      "description": "Switch the Oracle environment to +ASM to validate archive logs in ASM diskgroup.",
+      "action_type": "command",
+      "command": ". racenv +ASM",
+      "expected_output": "ASM environment set",
+      "rollback": {
+        "supported": false
+      }
+    },
+    {
+      "step_id": "validate_archivelogs_in_asm",
+      "title": "Validate Archivelogs in ASM Diskgroup",
+      "description": "Navigate to ARCH diskgroup and verify whether archive logs are present for the database.",
+      "action_type": "command",
+      "command": "asmcmd lsdg && asmcmd cd ARCH && asmcmd ls",
+      "expected_output": "ARCH diskgroup accessible; archive log directories verified",
+      "rollback": {
+        "supported": false
+      }
+    },
+    {
+      "step_id": "notify_backup_team",
+      "title": "Notify Backup Team",
+      "description": "If no archivelogs are present, inform Backup Team to monitor and retry backup at a later time.",
+      "action_type": "command",
+      "command": "ServiceNow → Update notes → Notify Backup Team to monitor next backup run",
+      "expected_output": "Backup team informed",
+      "rollback": {
+        "supported": false
+      }
+    }
+  ],
+
+  "post_checks": [
+    {
+      "id": "monitor_next_backup",
+      "description": "Confirm archivelogs are generated and backed up in subsequent backup runs",
+      "command": "Rubrik Portal → Backup timeline review",
+      "expected_result": "Archivelog backup succeeds"
+    }
+  ],
+
+  "auto_fix": {
+    "supported": false,
+    "risk_level": "Low",
+    "requires_human_approval": false
+  },
+
+  "notifications": {
+    "on_success": "Backup Team notified to monitor next run; no DBA action required.",
+    "on_failure": "Escalate to Oracle DBA team if archivelogs remain absent despite database activity.",
+    "notify_team": ["Backup_Team", "DBA_Team"]
+  },
+
+  "metadata": {
+    "version": "1.0",
+    "last_modified": "2026-01-08",
+    "author": "Oracle DBA Team",
+    "tags": [
+      "oracle",
+      "archivelog",
+      "asm",
+      "backup_failure",
+      "rubrik"
+    ]
+  }
+}

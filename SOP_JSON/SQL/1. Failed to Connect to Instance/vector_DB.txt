@@ -1,0 +1,23 @@
+
+{
+  "sop_id": "sqlserver_failed_to_connect_to_instance",
+  "db_type": "SQL_Server",
+  "error_category": "Backup_Failure",
+  "problem_statement": "Rubrik backup failed due to inability to connect to SQL Server instance",
+  "symptoms": [
+    "Critical Rubrik alert received",
+    "Alert mentions 'The transaction log chain is broken for database'",
+    "Backup job status shows failure in Rubrik portal"
+  ],
+  "resolution_summary": "Execute the SOPs provided by the DBA. Update the SNOW ticket with the resolution step and notify backup team to rerun the backup."
+  "auto_fix_supported": false,
+  "requires_human_approval": false,
+  "risk_level": "Medium",
+  "tags": [
+    "sql_server",
+    "rubrik",
+    "backup_failure",
+    "transaction_log_chain",
+    "connectivity_issue"
+  ]
+}

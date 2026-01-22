@@ -1,0 +1,24 @@
+
+{
+  "sop_id": "oracle_db_not_open",
+  "db_type": "Oracle",
+  "error_category": "Backup_Failure",
+  "problem_statement": "Rubrik backup failed because the Oracle database is not open",
+  "symptoms": [
+    "Rubrik snappable backup failure logged",
+    "Service request mentions 'DB is not open'",
+    "Database OPEN_MODE not in READ WRITE",
+    "No Oracle PMON process running on the server"
+  ],
+  "resolution_summary": "Execute the SOPs provided by the DBA. Update the SNOW ticket with the resolution step and notify backup team to rerun the backup."
+  "auto_fix_supported": false,
+  "requires_human_approval": false,
+  "risk_level": "Medium",
+  "tags": [
+    "oracle",
+    "backup_failure",
+    "db_not_open",
+    "rubrik",
+    "sla"
+  ]
+}

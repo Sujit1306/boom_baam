@@ -1,0 +1,107 @@
+
+{
+  "sop_id": "oracle_ora08181_datafile_mismatch",
+  "sop_name": "Oracle Backup Failure – ORA-08181 / Datafile SCN Mismatch",
+  "db_type": "Oracle",
+  "error_category": "Backup_Failure",
+
+  "prerequisites": {
+    "min_permissions": [
+      "ServiceNow_incident_update"
+    ],
+    "required_tools": [
+      "ServiceNow",
+      "Rubrik Portal"
+    ],
+    "pre_checks": [
+      {
+        "id": "check_ora_error",
+        "description": "Verify ServiceNow incident mentions ORA-08181 error",
+        "command": "ServiceNow → Review incident description",
+        "expected_result": "Error code ORA-08181 present",
+        "failure_action": "Abort"
+      }
+    ]
+  },
+
+  "steps": [
+    {
+      "step_id": "validate_error",
+      "title": "Validate ORA-08181 Error",
+      "description": "Confirm the Rubrik backup failure is caused by ORA-08181 or datafile SCN mismatch.",
+      "action_type": "decision_node",
+      "command": "ServiceNow → Incident → Review Rubrik error logs",
+      "expected_output": "ORA-08181 confirmed",
+      "rollback": {
+        "supported": false
+      }
+    },
+    {
+      "step_id": "handoff_to_backup",
+      "title": "Assign to Backup Team",
+      "description": "Update incident notes and assign request to Backup Team for new FULL database snapshot followed by scheduled incremental backup.",
+      "action_type": "command",
+      "command": "ServiceNow → Update work notes → Assign to Backup Team",
+      "expected_output": "Incident assigned to Backup Team",
+      "rollback": {
+        "supported": false
+      }
+    },
+    {
+      "step_id": "backup_execution",
+      "title": "Trigger Full and Incremental Backup",
+      "description": "Backup Team triggers a new FULL DB snapshot in Rubrik followed by the scheduled incremental backup.",
+      "action_type": "api_call",
+      "command": "Rubrik Portal → Trigger Full Snapshot → Allow scheduled incremental backup",
+      "expected_output": "Full and incremental backups completed successfully",
+      "rollback": {
+        "supported": false
+      }
+    },
+    {
+      "step_id": "close_request",
+      "title": "Update and Close Service Request",
+      "description": "Backup Team updates the incident notes with successful backup status and closes the request.",
+      "action_type": "command",
+      "command": "ServiceNow → Update notes → Close request",
+      "expected_output": "Service request closed",
+      "rollback": {
+        "supported": false
+      }
+    }
+  ],
+
+  "post_checks": [
+    {
+      "id": "validate_backup_success",
+      "description": "Verify latest full and incremental backups completed successfully",
+      "command": "Rubrik Portal → Database → Backup Timeline",
+      "expected_result": "Backup status = Success"
+    }
+  ],
+
+  "auto_fix": {
+    "supported": false,
+    "risk_level": "High",
+    "requires_human_approval": false
+  },
+
+  "notifications": {
+    "on_success": "Confirm successful backup in ServiceNow and close the incident.",
+    "on_failure": "Escalate to Oracle DBA and Backup teams for further investigation.",
+    "notify_team": ["Backup_Team", "DBA_Team"]
+  },
+
+  "metadata": {
+    "version": "1.0",
+    "last_modified": "2026-01-08",
+    "author": "Oracle DBA Team",
+    "tags": [
+      "oracle",
+      "ora08181",
+      "datafile_mismatch",
+      "rubrik",
+      "backup_failure"
+    ]
+  }
+}

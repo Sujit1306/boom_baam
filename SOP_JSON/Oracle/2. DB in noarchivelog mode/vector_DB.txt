@@ -1,0 +1,26 @@
+
+{
+  "sop_id": "oracle_noarchivelog_mode",
+  "db_type": "Oracle",
+  "error_category": "Log_Mode",
+  "problem_statement": "Oracle database is running in NOARCHIVELOG mode, leading to Rubrik snappable backup failures",
+  "symptoms": [
+    "Rubrik snappable backup failure logged",
+    "Service request indicates 'DB in noarchivelog mode'",
+    "SQL query shows LOG_MODE = NOARCHIVELOG",
+    "Archive logs not being generated"
+  ],
+  "resolution_summary": "Execute the SOPs provided by the DBA. Update the SNOW ticket with the resolution step and notify backup team to rerun the backup."
+  "auto_fix_supported": false,
+  "requires_human_approval": false,
+  "risk_level": "High",
+  "tags": [
+    "oracle",
+    "backup_failure",
+    "noarchivelog",
+    "archivelog",
+    "log_mode",
+    "rubrik",
+    "sla"
+  ]
+}

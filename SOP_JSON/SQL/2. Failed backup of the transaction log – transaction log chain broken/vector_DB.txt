@@ -1,0 +1,23 @@
+
+{
+  "sop_id": "sqlserver_transaction_log_chain_broken",
+  "db_type": "SQL_Server",
+  "error_category": "Backup_Failure",
+  "problem_statement": "Transaction log backup failed because the log chain is broken, causing Rubrik backup failure",
+  "symptoms": [
+    "Critical Rubrik alert mentioning 'The transaction log chain is broken for database'",
+    "Backup job failure in Rubrik portal",
+    "Manual or native SQL backups interfering with log chain"
+  ],
+  "resolution_summary": "Execute the SOPs provided by the DBA. Update the SNOW ticket with the resolution step and notify backup team to rerun the backup."
+  "auto_fix_supported": false,
+  "requires_human_approval": false,
+  "risk_level": "High",
+  "tags": [
+    "sql_server",
+    "rubrik",
+    "transaction_log",
+    "backup_failure",
+    "log_chain_broken"
+  ]
+}

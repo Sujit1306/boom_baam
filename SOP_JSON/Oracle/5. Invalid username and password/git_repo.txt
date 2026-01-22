@@ -1,0 +1,109 @@
+
+{
+  "sop_id": "oracle_invalid_username_password",
+  "sop_name": "Oracle Backup Failure Due to Invalid Credentials",
+  "db_type": "Oracle",
+  "error_category": "Authentication",
+
+  "prerequisites": {
+    "min_permissions": [
+      "oracle_sysdba",
+      "pbrun_access",
+      "ServiceNow_incident_update"
+    ],
+    "required_tools": [
+      "ssh",
+      "sqlplus"
+    ],
+    "pre_checks": [
+      {
+        "id": "check_invalid_credentials",
+        "description": "Verify ServiceNow request mentions 'Invalid username and password'",
+        "command": "ServiceNow → Review incident description",
+        "expected_result": "Keyword 'Invalid username and password' present",
+        "failure_action": "Abort"
+      }
+    ]
+  },
+
+  "steps": [
+    {
+      "step_id": "connect_server",
+      "title": "Connect to Database Server",
+      "description": "Connect to the Oracle database server from jump host and configure the Oracle environment using racenv.",
+      "action_type": "command",
+      "command": "pbrun -u oracle -h <hostname> SHELL && . racenv",
+      "expected_output": "Oracle environment set successfully",
+      "rollback": {
+        "supported": false
+      }
+    },
+    {
+      "step_id": "create_external_user",
+      "title": "Create External Database Users",
+      "description": "Create external database users required for Rubrik backups and grant necessary privileges.",
+      "action_type": "sql_query",
+      "command": "CREATE USER ops$rubrikdb IDENTIFIED EXTERNALLY;\nGRANT CONNECT, SELECT_CATALOG_ROLE TO ops$rubrikdb;\nCREATE USER rubrikdb IDENTIFIED EXTERNALLY;\nGRANT CONNECT, SELECT_CATALOG_ROLE TO rubrikdb;",
+      "expected_output": "Users created and privileges granted successfully",
+      "rollback": {
+        "supported": true
+      }
+    },
+    {
+      "step_id": "trigger_backup",
+      "title": "Trigger Backup",
+      "description": "Notify Backup Team to trigger the Rubrik backup after user creation.",
+      "action_type": "command",
+      "command": "ServiceNow → Update work notes → Notify Backup Team to re-run backup",
+      "expected_output": "Backup re-triggered",
+      "rollback": {
+        "supported": false
+      }
+    },
+    {
+      "step_id": "close_request",
+      "title": "Close Service Request",
+      "description": "After successful backup, update notes and close the service request.",
+      "action_type": "command",
+      "command": "ServiceNow → Update resolution → Close request",
+      "expected_output": "Service request closed",
+      "rollback": {
+        "supported": false
+      }
+    }
+  ],
+
+  "post_checks": [
+    {
+      "id": "validate_backup",
+      "description": "Verify backup completed successfully after fixing authentication issue",
+      "command": "Rubrik Portal → Database → Backup Timeline",
+      "expected_result": "Backup status = Success"
+    }
+  ],
+
+  "auto_fix": {
+    "supported": false,
+    "risk_level": "Medium",
+    "requires_human_approval": true
+  },
+
+  "notifications": {
+    "on_success": "Confirm successful backup in ServiceNow and close the request.",
+    "on_failure": "Escalate to Oracle DBA Team for further authentication review.",
+    "notify_team": ["Backup_Team", "DBA_Team"]
+  },
+
+  "metadata": {
+    "version": "1.0",
+    "last_modified": "2026-01-08",
+    "author": "Oracle DBA Team",
+    "tags": [
+      "oracle",
+      "authentication",
+      "invalid_credentials",
+      "rubrik",
+      "backup_failure"
+    ]
+  }
+}

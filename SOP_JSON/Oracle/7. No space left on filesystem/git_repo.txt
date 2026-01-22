@@ -1,0 +1,94 @@
+
+{
+  "sop_id": "oracle_no_space_left_on_filesystem",
+  "sop_name": "Oracle Backup Failure Due to No Space Left on Filesystem",
+  "db_type": "Oracle",
+  "error_category": "Disk_Space",
+
+  "prerequisites": {
+    "min_permissions": [
+      "oracle_sysdba",
+      "pbrun_access",
+      "ServiceNow_incident_update"
+    ],
+    "required_tools": [
+      "ssh",
+      "linux_shell"
+    ],
+    "pre_checks": [
+      {
+        "id": "check_error_keyword",
+        "description": "Verify ServiceNow request mentions 'No Space left on filesystem'",
+        "command": "ServiceNow → Review incident description",
+        "expected_result": "Keyword 'No Space left on filesystem' present",
+        "failure_action": "Abort"
+      }
+    ]
+  },
+
+  "steps": [
+    {
+      "step_id": "connect_server",
+      "title": "Connect to Database Server",
+      "description": "Connect to the database server from jump host.",
+      "action_type": "command",
+      "command": "pbrun -u oracle -h <hostname> SHELL",
+      "expected_output": "Successful connection to database server",
+      "rollback": {
+        "supported": false
+      }
+    },
+    {
+      "step_id": "check_filesystem_usage",
+      "title": "Check Filesystem Utilization",
+      "description": "Identify filesystems running out of space using df -h.",
+      "action_type": "command",
+      "command": "df -h",
+      "expected_output": "Filesystem with 100% usage identified (example: /oracle)",
+      "rollback": {
+        "supported": false
+      }
+    },
+    {
+      "step_id": "identify_large_files",
+      "title": "Identify Large Trace, Audit, or XML Files",
+      "description": "Locate large audit, trace, or XML files consuming space in Oracle directories.",
+      "action_type": "command",
+      "command": "cd /oracle/app/admin/<DBNAME>/adump && ls -lt *.aud",
+      "expected_output": "Large .aud files identified",
+      "rollback": {
+        "supported": false
+      }
+    },
+    {
+      "step_id": "cleanup_files",
+      "title": "Clean Up Unnecessary Files",
+      "description": "Remove unnecessary audit or trace files to free space on the filesystem.",
+      "action_type": "command",
+      "command": "rm -rf *.aud",
+      "expected_output": "Disk space freed successfully",
+      "rollback": {
+        "supported": true
+      }
+    },
+    {
+      "step_id": "trigger_backup",
+      "title": "Trigger Backup After Cleanup",
+      "description": "Notify Backup Team to re-trigger the failed backup after freeing space.",
+      "action_type": "command",
+      "command": "ServiceNow → Update work notes → Request backup re-trigger",
+      "expected_output": "Backup re-triggered",
+      "rollback": {
+        "supported": false
+      }
+    }
+  ],
+
+  "post_checks": [
+    {
+      "id": "validate_filesystem_space",
+      "description": "Ensure sufficient free space is available after cleanup",
+      "command": "df -h",
+      "expected_result": "Filesystem usage below critical threshold"
+    },
+    {

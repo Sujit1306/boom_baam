@@ -1,0 +1,23 @@
+
+{
+  "sop_id": "oracle_ora08181_datafile_mismatch",
+  "db_type": "Oracle",
+  "error_category": "Backup_Failure",
+  "problem_statement": "Rubrik backup failed due to ORA-08181 error or datafile mismatch during backup",
+  "symptoms": [
+    "Rubrik snappable backup failure logged",
+    "Service request mentions 'ORA-08181'",
+    "Backup job did not complete due to SCN or datafile inconsistency"
+  ],
+  "resolution_summary": "Execute the SOPs provided by the DBA. Update the SNOW ticket with the resolution step and notify backup team to rerun the backup."
+  "auto_fix_supported": false,
+  "requires_human_approval": false,
+  "risk_level": "High",
+  "tags": [
+    "oracle",
+    "backup_failure",
+    "ora08181",
+    "datafile_mismatch",
+    "rubrik"
+  ]
+}

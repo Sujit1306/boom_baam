@@ -1,0 +1,116 @@
+
+{
+  "sop_id": "sqlserver_transaction_log_chain_broken",
+  "sop_name": "SQL Server Transaction Log Backup Failure – Log Chain Broken",
+  "db_type": "SQL_Server",
+  "error_category": "Backup_Failure",
+
+  "prerequisites": {
+    "min_permissions": [
+      "SQL_sysadmin",
+      "RDP_access",
+      "ServiceNow_incident_update",
+      "Rubrik_portal_access"
+    ],
+    "required_tools": [
+      "RDP (mstsc)",
+      "SSMS",
+      "ServiceNow",
+      "Rubrik Portal",
+      "Services.msc"
+    ],
+    "pre_checks": [
+      {
+        "id": "check_rubrik_alert",
+        "description": "Verify Rubrik alert mentions transaction log chain issue",
+        "command": "ServiceNow → Incident → Review alert description",
+        "expected_result": "Alert contains 'The transaction log chain is broken for database'",
+        "failure_action": "Abort"
+      }
+    ]
+  },
+
+  "steps": [
+    {
+      "step_id": "access_server",
+      "title": "Access SQL Server",
+      "description": "RDP into the affected SQL Server host using authorized credentials.",
+      "action_type": "command",
+      "command": "mstsc /v:<ServerName>",
+      "expected_output": "Successful RDP connection to target server",
+      "rollback": {
+        "supported": false
+      }
+    },
+    {
+      "step_id": "verify_backup_history",
+      "title": "Verify Transaction Log Backup History",
+      "description": "Check whether log backups are occurring locally and potentially breaking the log chain.",
+      "action_type": "sql_query",
+      "command": "SELECT user_name, backup_start_date, type, database_name, server_name, m.physical_device_name FROM msdb..backupset b JOIN msdb..backupmediafamily m ON b.media_set_id = m.media_set_id WHERE b.type = 'L' AND b.database_name = '<DB_NAME>' AND backup_start_date > GETDATE() - 1 ORDER BY backup_start_date DESC;",
+      "expected_output": "Result shows physical_device_name details for log backups",
+      "rollback": {
+        "supported": false
+      }
+    },
+    {
+      "step_id": "disable_sql_backup_jobs",
+      "title": "Disable Native SQL Backup Jobs",
+      "description": "Disable SQL backup jobs that can break the Rubrik log chain.",
+      "action_type": "sql_query",
+      "command": "USE msdb; EXEC sp_update_job @job_name = '<JobName>', @enabled = 0;",
+      "expected_output": "SQL job disabled successfully",
+      "rollback": {
+        "supported": true
+      }
+    },
+    {
+      "step_id": "vormetric_validation",
+      "title": "Validate Vormetric Encryption",
+      "description": "If Vormetric encryption is enabled, validate vmd service and backup configuration.",
+      "action_type": "decision_node",
+      "command": "services.msc → Check vmd service",
+      "expected_output": "Vormetric status validated",
+      "rollback": {
+        "supported": false
+      }
+    },
+    {
+      "step_id": "trigger_rubrik_backup",
+      "title": "Trigger On-Demand Backup in Rubrik",
+      "description": "Manually trigger snapshot and log backup after resolving log chain issues.",
+      "action_type": "api_call",
+      "command": "Rubrik Portal → Inventory → SQL Server → Instance → Take On-Demand Snapshot & Take Log Backup",
+      "expected_output": "Full snapshot and log backup triggered successfully",
+      "rollback": {
+        "supported": false
+      }
+    }
+  ],
+
+  "post_checks": [
+    {
+      "id": "validate_backup_success",
+      "description": "Verify latest log and snapshot backups completed successfully",
+      "command": "Rubrik Portal → Database → Backup Timeline",
+      "expected_result": "Backup status shows Success"
+    }
+  ],
+
+  "auto_fix": {
+    "supported": false,
+    "risk_level": "High",
+    "requires_human_approval": true
+  },
+
+  "notifications": {
+    "on_success": "Update ServiceNow incident and close ticket after confirming successful backup.",
+    "on_failure": "Escalate to DBA or Backup team with findings.",
+    "notify_team": ["Backup_Team", "DBA_Team"]
+  },
+
+  "metadata": {
+    "version": "1.0",
+    "last_modified": "2026-01-08",
+    "author": "SQL DBA Team",
+    "tags": [

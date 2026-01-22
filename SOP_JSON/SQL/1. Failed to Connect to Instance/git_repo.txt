@@ -1,0 +1,171 @@
+
+{
+  "sop_id": "sqlserver_failed_to_connect_to_instance",
+  "sop_name": "SQL Server Backup Failure: Failed to Connect to Instance (Rubrik)",
+  "db_type": "SQL_Server",
+  "error_category": "Backup_Failure",
+
+  "prerequisites": {
+    "min_permissions": [
+      "RDP access to target server",
+      "Local Administrator on target server",
+      "ServiceNow incident read/update",
+      "Rubrik portal access (read)",
+      "SQL Server view service status (local)"
+    ],
+    "required_tools": [
+      "RDP client (mstsc)",
+      "SQL Server Configuration Manager (services.msc)",
+      "Windows Event Viewer",
+      "Rubrik Portal",
+      "ServiceNow"
+    ],
+    "pre_checks": [
+      {
+        "id": "check_alert_phrase",
+        "description": "Verify the Rubrik incident/alert contains the phrase 'The transaction log chain is broken for database'",
+        "command": "ServiceNow → Open incident → Review alert description",
+        "expected_result": "Alert description contains the expected phrase",
+        "failure_action": "Abort"
+      },
+      {
+        "id": "capture_targets",
+        "description": "Capture Server Name and SQL Instance Name from the incident/alert",
+        "command": "ServiceNow → Copy ServerName and SQLInstance into work notes",
+        "expected_result": "Server and instance name",
+        "failure_action": "Continue"
+      }
+    ]
+  },
+
+  "steps": [
+    {
+      "step_id": "identify_issue",
+      "title": "Identify the Issue in ServiceNow",
+      "description": "Confirm a critical Rubrik alert auto-created a ServiceNow incident; review details and note server/instance.",
+      "action_type": "command",
+      "command": "ServiceNow → Incident → Related Alert → Review description and details",
+      "expected_output": "Incident validated; scope confirmed for the affected server and SQL instance",
+      "rollback": {
+        "supported": false
+      }
+    },
+    {
+      "step_id": "rdp_server",
+      "title": "Access the Server",
+      "description": "RDP into the affected Windows server using authorized credentials.",
+      "action_type": "command",
+      "command": "mstsc /v:<ServerName>",
+      "expected_output": "Successful RDP session on the target server",
+      "rollback": {
+        "supported": false
+      }
+    },
+    {
+      "step_id": "check_sql_services",
+      "title": "Check SQL Services",
+      "description": "Verify that SQL Server and SQL Server Agent services are running. If stopped, start them unless there is a decommission request or planned activity.",
+      "action_type": "command",
+      "command": "PowerShell: Get-Service -Name 'MSSQLSERVER','SQLSERVERAGENT'; Get-Service -Name \"MSSQL$<InstanceName>\", \"SQLAgent$<InstanceName>\"",
+      "expected_output": "SQL Server and SQL Server Agent services are Running",
+      "rollback": {
+        "supported": true
+      }
+    },
+    {
+      "step_id": "change_calendar_check",
+      "title": "Decision: Decommission/Planned Activity Check",
+      "description": "Check ServiceNow for decommission or planned maintenance; review SQL DBA DL emails for planned downtime.",
+      "action_type": "command",
+      "command": "ServiceNow → Search decommission/changes; Review DBA DL inbox for notifications",
+      "expected_output": "If planned activity/decommission exists, update and close incident; else proceed",
+      "rollback": {
+        "supported": false
+      }
+    },
+    {
+      "step_id": "check_rubrik_services",
+      "title": "Check Rubrik Backup Services and VSS Writer",
+      "description": "Ensure 'Rubrik Backup Service' and 'SQL Server VSS Writer' are installed, set to Automatic, and running.",
+      "action_type": "command",
+      "command": "PowerShell: Get-Service -Name 'RubrikBackupService','SQLWriter'; sc qc RubrikBackupService; sc qc SQLWriter",
+      "expected_output": "RubrikBackupService and SQLWriter are present, StartType=Auto, Status=Running",
+      "rollback": {
+        "supported": true
+      }
+    },
+    {
+      "step_id": "start_services_if_needed",
+      "title": "Start Services / Review Errors",
+      "description": "Start Rubrik Backup Service and SQL Server VSS Writer if stopped; if VSS Writer is unstable or services fail to start, review Event Viewer and escalate.",
+      "action_type": "command",
+      "command": "PowerShell: Start-Service -Name 'RubrikBackupService','SQLWriter'; EventVwr.msc → Application/System → filter on VSS/SQL/Service Control Manager",
+      "expected_output": "Services started successfully or error identified and escalated (BAR/Windows/Rubrik Vendor)",
+      "rollback": {
+        "supported": true
+      }
+    },
+    {
+      "step_id": "validate_rubrik_portal",
+      "title": "Validate in Rubrik Portal",
+      "description": "Log in to Rubrik, navigate to Inventory → SQL Server Databases, search by server, and verify RBS status is Connected and backups are current.",
+      "action_type": "command",
+      "command": "Rubrik Portal → Inventory → SQL Server Databases → Search <ServerName> → Check connection and backup timeline",
+      "expected_output": "RBS Connected; last backups up to date as per policy",
+      "rollback": {
+        "supported": false
+      }
+    },
+    {
+      "step_id": "close_incident",
+      "title": "Update and Close Incident",
+      "description": "If backups are healthy and connection restored, update ServiceNow work notes and close the incident (Rubrik alert will auto-close).",
+      "action_type": "command",
+      "command": "ServiceNow → Update work notes → Close incident",
+      "expected_output": "Incident closed; Rubrik alert auto-closed",
+      "rollback": {
+        "supported": true
+      }
+    }
+  ],
+
+  "post_checks": [
+    {
+      "id": "rubrik_alert_closed",
+      "description": "Confirm Rubrik alert auto-closed upon incident closure",
+      "command": "ServiceNow → Incident → Related Alert",
+      "expected_result": "Alert state = Closed"
+    },
+    {
+      "id": "services_stable",
+      "description": "Verify SQL and Rubrik services remain running",
+      "command": "PowerShell: Get-Service -Name 'MSSQLSERVER','SQLSERVERAGENT','RubrikBackupService','SQLWriter'",
+      "expected_result": "All listed services are Running"
+    },
+    {
+      "id": "rubrik_backup_recency",
+      "description": "Confirm last successful backup meets RPO",
+      "command": "Rubrik Portal → Database → Timeline",
+      "expected_result": "Last backup within defined policy window"
+    }
+  ],
+
+  "auto_fix": {
+    "supported": false,
+    "risk_level": "Medium",
+    "requires_human_approval": false
+  },
+
+  "notifications": {
+    "on_success": "Update ServiceNow with actions taken and validation results; incident closed; optional FYI to SQL DBA DL",
+    "on_failure": "Document findings and errors in ServiceNow; escalate to BAR/Windows/Rubrik teams as appropriate",
+    "notify_team": ["Backup_Team", "DBA_Team", "Infra_Team"]
+  },
+
+  "metadata": {
+    "version": "1.0",
+    "last_modified": "2026-01-08",
+    "author": "SQL DBA Team",
+    "tags": ["sql_server", "rubrik", "backup_failure", "rbs_connected", "vss_writer", "servicenow"]
+  }
+}

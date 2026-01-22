@@ -1,0 +1,131 @@
+
+{
+  "sop_id": "oracle_db_not_open",
+  "sop_name": "Oracle Database Not Open (Backup Failure)",
+  "db_type": "Oracle",
+  "error_category": "Backup_Failure",
+
+  "prerequisites": {
+    "min_permissions": [
+      "oracle_sysdba",
+      "pbrun_access",
+      "ServiceNow_incident_update"
+    ],
+    "required_tools": [
+      "ssh",
+      "sqlplus"
+    ],
+    "pre_checks": [
+      {
+        "id": "check_error_keyword",
+        "description": "Verify ServiceNow request mentions 'DB is not open'",
+        "command": "ServiceNow → Review incident description",
+        "expected_result": "Keyword 'DB is not open' present",
+        "failure_action": "Abort"
+      }
+    ]
+  },
+
+  "steps": [
+    {
+      "step_id": "connect_server",
+      "title": "Connect to Database Server",
+      "description": "Connect to the database server from jump host and set the database environment using racenv.",
+      "action_type": "command",
+      "command": "pbrun -u oracle -h <hostname> SHELL && . racenv",
+      "expected_output": "Oracle environment set successfully",
+      "rollback": {
+        "supported": false
+      }
+    },
+    {
+      "step_id": "validate_pmon_process",
+      "title": "Validate Oracle PMON Process",
+      "description": "Check whether the Oracle PMON process is running on the server.",
+      "action_type": "command",
+      "command": "ps -ef | grep -i pmon",
+      "expected_output": "ora_pmon_<DB_NAME> process visible",
+      "rollback": {
+        "supported": false
+      }
+    },
+    {
+      "step_id": "check_open_mode",
+      "title": "Check Database Open Mode",
+      "description": "Connect to SQL*Plus and verify database OPEN_MODE.",
+      "action_type": "sql_query",
+      "command": "SELECT NAME, DB_UNIQUE_NAME, OPEN_MODE, LOG_MODE, DATABASE_ROLE FROM v$database;",
+      "expected_output": "OPEN_MODE returned as READ WRITE",
+      "rollback": {
+        "supported": false
+      }
+    },
+    {
+      "step_id": "reassign_backup_trigger",
+      "title": "Reassign to Backup Team (If DB Is Open)",
+      "description": "If database OPEN_MODE is READ WRITE, update notes and assign request to Backup Team to re-trigger backup.",
+      "action_type": "command",
+      "command": "ServiceNow → Update work notes → Assign to Backup Team",
+      "expected_output": "Request reassigned for backup retry",
+      "rollback": {
+        "supported": false
+      }
+    },
+    {
+      "step_id": "db_not_running_investigation",
+      "title": "Investigate Database Not Running",
+      "description": "If PMON process is not running or database is not in READ WRITE mode, DBA investigates and updates RCA.",
+      "action_type": "decision_node",
+      "command": "Validate PMON absence and database state",
+      "expected_output": "Root cause analysis updated in ServiceNow",
+      "rollback": {
+        "supported": false
+      }
+    },
+    {
+      "step_id": "sla_disable_if_required",
+      "title": "Disable SLA If Database Is Not Required to Be Open",
+      "description": "If application confirms database should remain closed, request Backup Team to disable SLA and close request.",
+      "action_type": "command",
+      "command": "ServiceNow → Update notes → Assign to Backup Team for SLA disable",
+      "expected_output": "SLA disabled and request closed",
+      "rollback": {
+        "supported": false
+      }
+    }
+  ],
+
+  "post_checks": [
+    {
+      "id": "validate_ticket_closure",
+      "description": "Confirm ServiceNow request is closed with appropriate resolution notes",
+      "command": "ServiceNow → Incident state check",
+      "expected_result": "Incident closed"
+    }
+  ],
+
+  "auto_fix": {
+    "supported": false,
+    "risk_level": "Medium",
+    "requires_human_approval": true
+  },
+
+  "notifications": {
+    "on_success": "Backup team notified to re-trigger backup or SLA disabled based on database status.",
+    "on_failure": "DBA provides RCA and escalates if required.",
+    "notify_team": ["Backup_Team", "DBA_Team"]
+  },
+
+  "metadata": {
+    "version": "1.0",
+    "last_modified": "2026-01-08",
+    "author": "Oracle DBA Team",
+    "tags": [
+      "oracle",
+      "db_not_open",
+      "backup_failure",
+      "rubrik",
+      "servicenow"
+    ]
+  }
+}

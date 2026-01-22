@@ -1,0 +1,117 @@
+
+{
+  "sop_id": "oracle_db_not_part_of_dg_setup",
+  "sop_name": "Oracle Database Not Part of Data Guard Setup",
+  "db_type": "Oracle",
+  "error_category": "Replication_Issue",
+
+  "prerequisites": {
+    "min_permissions": [
+      "oracle_sysdba",
+      "pbrun_access",
+      "ServiceNow_incident_update"
+    ],
+    "required_tools": [
+      "ssh",
+      "sqlplus"
+    ],
+    "pre_checks": [
+      {
+        "id": "check_dg_keyword",
+        "description": "Verify ServiceNow request mentions 'DB is not part of DG setup'",
+        "command": "ServiceNow → Review incident description",
+        "expected_result": "Keyword 'DB is not part of DG setup' present",
+        "failure_action": "Abort"
+      }
+    ]
+  },
+
+  "steps": [
+    {
+      "step_id": "connect_server",
+      "title": "Connect to Database Server",
+      "description": "Connect to the Oracle database server from jump host and configure the Oracle environment using racenv.",
+      "action_type": "command",
+      "command": "pbrun -u oracle -h <hostname> SHELL && . racenv",
+      "expected_output": "Oracle environment set successfully",
+      "rollback": {
+        "supported": false
+      }
+    },
+    {
+      "step_id": "validate_log_archive_config",
+      "title": "Validate Data Guard Configuration",
+      "description": "Check whether the primary and standby databases are configured in the log_archive_config parameter.",
+      "action_type": "sql_query",
+      "command": "SHOW PARAMETER log_archive_config;",
+      "expected_output": "DG_CONFIG includes both primary and standby database names",
+      "rollback": {
+        "supported": false
+      }
+    },
+    {
+      "step_id": "configure_dg_if_missing",
+      "title": "Configure Data Guard Parameters",
+      "description": "If DG_CONFIG entry is missing, configure primary and standby database names in log_archive_config.",
+      "action_type": "sql_query",
+      "command": "ALTER SYSTEM SET log_archive_config='DG_CONFIG=(<PRIMARY_DB>,<STANDBY_DB>)';",
+      "expected_output": "System altered successfully",
+      "rollback": {
+        "supported": false
+      }
+    },
+    {
+      "step_id": "rediscover_database",
+      "title": "Rediscover Database in Rubrik",
+      "description": "Request Backup Team to rediscover the database and re-trigger the backup after DG configuration validation.",
+      "action_type": "command",
+      "command": "ServiceNow → Update work notes → Request backup rediscovery",
+      "expected_output": "Backup rediscovery requested",
+      "rollback": {
+        "supported": false
+      }
+    },
+    {
+      "step_id": "close_request",
+      "title": "Close Service Request",
+      "description": "After successful backup, update ServiceNow notes and close the request.",
+      "action_type": "command",
+      "command": "ServiceNow → Update resolution notes → Close request",
+      "expected_output": "Service request closed",
+      "rollback": {
+        "supported": false
+      }
+    }
+  ],
+
+  "post_checks": [
+    {
+      "id": "validate_backup",
+      "description": "Verify backup completed successfully after rediscovery",
+      "command": "Rubrik Portal → Database → Backup Timeline",
+      "expected_result": "Backup status = Success"
+    }
+  ],
+
+  "auto_fix": {
+    "supported": false,
+    "risk_level": "Medium",
+    "requires_human_approval": true
+  },
+
+  "notifications": {
+    "on_success": "Notify Backup Team to continue scheduled backups.",
+    "on_failure": "Escalate to Oracle DBA Team for further Data Guard validation.",
+    "notify_team": ["Backup_Team", "DBA_Team"]
+  },
+
+  "metadata": {
+    "version": "1.0",
+    "last_modified": "2026-01-08",
+    "author": "Oracle DBA Team",
+    "tags": [
+      "oracle",
+      "data_guard",
+      "dg_setup",
+      "replication_issue",
+      "rubrik",

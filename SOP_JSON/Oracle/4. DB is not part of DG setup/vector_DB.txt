@@ -1,0 +1,23 @@
+
+{
+  "sop_id": "oracle_db_not_part_of_dg_setup",
+  "db_type": "Oracle",
+  "error_category": "Replication_Issue",
+  "problem_statement": "Rubrik backup failed because the Oracle database is not part of Data Guard (DG) setup",
+  "symptoms": [
+    "Rubrik snappable backup failure logged",
+    "Service request mentions 'DB is not part of DG setup'",
+    "log_archive_config parameter missing or incomplete"
+  ],
+  "resolution_summary": "Execute the SOPs provided by the DBA. Update the SNOW ticket with the resolution step and notify backup team to rerun the backup.",
+  "auto_fix_supported": false,
+  "requires_human_approval": false,
+  "risk_level": "Medium",
+  "tags": [
+    "oracle",
+    "backup_failure",
+    "dg_setup",
+    "log_archive_config",
+    "rubrik"
+  ]
+}
