@@ -1,0 +1,2 @@
+set JQ_SCHEMA=[ "SOP ID: \\(.sop_id)", "DB Type: \\(.db_type)", "Error Category: \\(.error_category)", "Risk Level: \\(.risk_level)", "", "Problem Statement:", .problem_statement, "", "Symptoms:", (.symptoms | map(\"- \" + .) | join(\"\\n\")), "", "Resolution:", .resolution_summary, "", "Tags:", (.tags | map(\"#\" + .) | join(\", \")) ] | join(\"\\n\")
+python final_chunking.py
